@@ -61,4 +61,37 @@ class LatexTableMappings:
 
         PropertiesColumns.LOAD_RESISTANCE:
             LatexTableColumns.LOAD_RESISTANCE,
+
+        PropertiesColumns.RMSE:
+            LatexTableColumns.RMSE,
+
+        PropertiesColumns.MAE:
+            LatexTableColumns.MAE,
+
+        PropertiesColumns.R2:
+            LatexTableColumns.R_SQUARED,
+
+        PropertiesColumns.RMSE_ORIGINAL:
+            LatexTableColumns.RMSE_ORIGINAL,
+
+        PropertiesColumns.MAE_ORIGINAL:
+            LatexTableColumns.MAE_ORIGINAL,
+
+        PropertiesColumns.R2_ORIGINAL:
+            LatexTableColumns.R2_ORIGINAL,
+
+        PropertiesColumns.RMSE_NLS:
+            LatexTableColumns.RMSE_NLS,
+
+        PropertiesColumns.MAE_NLS:
+            LatexTableColumns.MAE_NLS,
+
+        PropertiesColumns.R2_NLS:
+            LatexTableColumns.R2_NLS,
+
+        PropertiesColumns.NUMBER_OF_TAU_RISING:
+            LatexTableColumns.NUMBER_OF_TAU_RISING,
+
+        PropertiesColumns.NUMBER_OF_TAU_FALLING:
+            LatexTableColumns.NUMBER_OF_TAU_FALLING,
     }

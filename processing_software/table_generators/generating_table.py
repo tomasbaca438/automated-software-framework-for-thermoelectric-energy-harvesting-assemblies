@@ -45,7 +45,9 @@ class TableGenerator:
 
     @staticmethod
     def generate_latex_tables(
-        file_paths: list[str]
+        file_paths: list[str],
+        two_collumns: bool,
+        squeeze_table: bool
     ) -> None:
 
         for file_path in file_paths:
@@ -66,6 +68,22 @@ class TableGenerator:
                     TableDirectories.STATIC_PROPERTIES_SUBDIRECTORY
                 )
 
+            elif "rising_nls_dynamic_properties" in file_path:
+
+                output_directory = os.path.join(
+                    TableDirectories.GENERATED_TABLES_DIRECTORY,
+                    TableDirectories
+                    .RISING_NLS_DYNAMIC_PROPERTIES_SUBDIRECTORY
+                )
+
+            elif "falling_nls_dynamic_properties" in file_path:
+
+                output_directory = os.path.join(
+                    TableDirectories.GENERATED_TABLES_DIRECTORY,
+                    TableDirectories
+                    .FALLING_NLS_DYNAMIC_PROPERTIES_SUBDIRECTORY
+                )
+
             elif "rising_dynamic_properties" in file_path:
 
                 output_directory = os.path.join(
@@ -82,13 +100,39 @@ class TableGenerator:
                     .FALLING_DYNAMIC_PROPERTIES_SUBDIRECTORY
                 )
 
+            elif "rising_first_order_validation" in file_path:
+
+                output_directory = os.path.join(
+                    TableDirectories.GENERATED_TABLES_DIRECTORY,
+                    TableDirectories
+                    .RISING_FIRST_ORDER_VALIDATION_SUBDIRECTORY
+                )
+
+            elif "falling_first_order_validation" in file_path:
+
+                output_directory = os.path.join(
+                    TableDirectories.GENERATED_TABLES_DIRECTORY,
+                    TableDirectories
+                    .FALLING_FIRST_ORDER_VALIDATION_SUBDIRECTORY
+                )
+
+            elif (
+                    "tau_correlation_matrix"
+                    in file_path
+            ):
+
+                output_directory = os.path.join(
+                    TableDirectories.GENERATED_TABLES_DIRECTORY,
+                    TableDirectories
+                    .TAU_CORRELATION_SUBDIRECTORY
+                )
+
             else:
 
                 raise ValueError(
                     f"Cannot determine table type "
                     f"from path: {file_path}"
                 )
-
             os.makedirs(
                 output_directory,
                 exist_ok=True
@@ -111,17 +155,42 @@ class TableGenerator:
                     df_export[
                         PropertiesColumns.LOAD_RESISTANCE
                     ]
-                    .replace(
-                        LatexLoadResistances.VALUES
+                    .astype(str)
+                    .str.replace(
+                        "kΩ",
+                        r"k$\Omega$",
+                        regex=False
+                    )
+                    .str.replace(
+                        "KΩ",
+                        r"K$\Omega$",
+                        regex=False
+                    )
+                    .str.replace(
+                        "Ω",
+                        r"$\Omega$",
+                        regex=False
                     )
                 )
 
-            if "variable" in df_export.columns:
-                df_export["variable"] = (
-                    df_export["variable"]
+            if (
+                    PropertiesColumns.VARIABLE
+                    in df_export.columns
+            ):
+                df_export[
+                    PropertiesColumns.VARIABLE
+                ] = (
+                    df_export[
+                        PropertiesColumns.VARIABLE
+                    ]
                     .replace(
                         LatexVariables.VARIABLES
                     )
+                )
+
+            if "tau_correlation_matrix" in file_path:
+                df_export = df_export.rename(
+                    columns=LatexVariables.VARIABLES
                 )
 
             df_export = df_export.rename(
@@ -146,20 +215,41 @@ class TableGenerator:
             latex_tabular = (
                 df_export.to_latex(
                     index=False,
-                    float_format="%.3f",
+                    float_format="%.2f",
                     escape=False
                 )
             )
 
-            latex_content = (
-                "\\begin{table*}[!t]\n"
-                "\\centering\n"
-                f"\\caption{{{caption}}}\n"
-                f"\\label{{{label}}}\n"
-                "\\small\n\n"
-                f"{latex_tabular}\n"
-                "\\end{table*}\n"
-            )
+            if squeeze_table:
+                latex_tabular = (
+                    "\\resizebox{0.99\\columnwidth}{!}{%\n"
+                    f"{latex_tabular}\n"
+                    "}\n"
+                )
+
+            if two_collumns:
+                latex_content = (
+                    "\\begin{table*}[!t]\n"
+                    "\\centering\n"
+                    f"\\caption{{{caption}}}\n"
+                    f"\\label{{{label}}}\n"
+                    "\\small\n\n"
+                    f"{latex_tabular}\n"
+                    "\\end{table*}\n"
+                )
+
+            else:
+                latex_content = (
+                    "\\begin{table}[!t]\n"
+                    "\\centering\n"
+                    f"\\caption{{{caption}}}\n"
+                    f"\\label{{{label}}}\n"
+                    "\\small\n\n"
+                    f"{latex_tabular}\n"
+                    "\\end{table}\n"
+                )
+
+
             with open(
                     output_file_path,
                     "w",

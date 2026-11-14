@@ -53,7 +53,7 @@ class StaticPropertiesAnalyzer:
 
         results = {
             variable: []
-            for variable in GeneratedResults.VARIABLES_STATIC
+            for variable in GeneratedResults.VARIABLES_GENERATED_RESULTS
         }
 
         for merged_file_path, label in zip(
@@ -66,7 +66,7 @@ class StaticPropertiesAnalyzer:
                 sep=";"
             )
 
-            for variable in GeneratedResults.VARIABLES_STATIC:
+            for variable in GeneratedResults.VARIABLES_GENERATED_RESULTS:
 
                 (
                     initial_value,

@@ -65,3 +65,52 @@ class PropertiesColumns:
     LOAD_RESISTANCE = (
         "load_resistance"
     )
+
+    RMSE = (
+        "rmse"
+    )
+
+    MAE = (
+        "mae"
+    )
+
+    R2 = (
+        "r2"
+    )
+
+    RMSE_ORIGINAL = (
+        "rmse"
+    )
+
+    MAE_ORIGINAL = (
+        "mae"
+    )
+
+    R2_ORIGINAL = (
+        "r2"
+    )
+
+    RMSE_NLS = (
+        "rmse nls"
+    )
+
+    MAE_NLS = (
+        "mae nls"
+    )
+
+    R2_NLS = (
+        "r2 nls"
+    )
+
+    DYNAMIC_SETTLING_TIME = "settling_time_s"
+    DYNAMIC_CUTOFF_FREQUENCY = "cutoff_frequency_hz"
+    DYNAMIC_CUTOFF_PERIOD_S = "cutoff_period_s"
+    DYNAMIC_CUTOFF_PERIOD_MIN = "cutoff_period_min"
+
+    NUMBER_OF_TAU_RISING = (
+        "number_of_tau_rising"
+    )
+
+    NUMBER_OF_TAU_FALLING = (
+        "number_of_tau_falling"
+    )

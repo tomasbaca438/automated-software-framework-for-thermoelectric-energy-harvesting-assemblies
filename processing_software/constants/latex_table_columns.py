@@ -25,7 +25,7 @@ class LatexTableColumns:
     )
 
     CUTOFF_FREQUENCY_RISING_HZ = (
-        r"$f_{c,R}$ [Hz]"
+        r"$f_{c,R}$ [mHz]"
     )
 
     CUTOFF_PERIOD_RISING_S = (
@@ -49,7 +49,7 @@ class LatexTableColumns:
     )
 
     CUTOFF_FREQUENCY_FALLING_HZ = (
-        r"$f_{c,F}$ [Hz]"
+        r"$f_{c,F}$ [mHz]"
     )
 
     CUTOFF_PERIOD_FALLING_S = (
@@ -62,4 +62,48 @@ class LatexTableColumns:
 
     LOAD_RESISTANCE = (
         r"$R_L$ [$\Omega$]"
+    )
+
+    RMSE = (
+        "RMSE"
+    )
+
+    MAE = (
+        "MAE"
+    )
+
+    R_SQUARED = (
+        r"$R^2$"
+    )
+
+    RMSE_ORIGINAL = (
+        r"RMSE"
+    )
+
+    MAE_ORIGINAL = (
+        r"MAE"
+    )
+
+    R2_ORIGINAL = (
+        r"$R^2$"
+    )
+
+    RMSE_NLS = (
+        r"RMSE$_{NLS}$"
+    )
+
+    MAE_NLS = (
+        r"MAE$_{NLS}$"
+    )
+
+    R2_NLS = (
+        r"$R^2_{NLS}$"
+    )
+
+    NUMBER_OF_TAU_RISING = (
+        r"$N_{\tau,R}$"
+    )
+
+    NUMBER_OF_TAU_FALLING = (
+        r"$N_{\tau,F}$"
     )

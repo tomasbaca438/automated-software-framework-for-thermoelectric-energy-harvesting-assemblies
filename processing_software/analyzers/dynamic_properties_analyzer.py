@@ -10,8 +10,10 @@ from constants.generated_results import (
 )
 import os
 
+from scipy.optimize import curve_fit
 
 class DynamicPropertiesAnalyzer:
+
 
     @staticmethod
     def calculate_rising_target(
@@ -83,6 +85,92 @@ class DynamicPropertiesAnalyzer:
         )
 
     @staticmethod
+    def estimate_rising_tau_nls(
+            time: np.ndarray,
+            measured: np.ndarray,
+            initial_value: float,
+            rising_steady_state_value: float,
+            tau_initial_guess: float
+    ) -> tuple[float, np.ndarray] | None:
+
+        def model(
+                time: np.ndarray,
+                tau: float
+        ) -> np.ndarray:
+
+            return (
+                    rising_steady_state_value
+                    - (
+                            rising_steady_state_value
+                            - initial_value
+                    )
+                    * np.exp(
+                -time / tau
+            )
+            )
+
+        try:
+
+            popt, pcov = curve_fit(
+                model,
+                time,
+                measured,
+                p0=[tau_initial_guess]
+            )
+
+            return (
+                float(popt[0]),
+                pcov
+            )
+
+        except Exception:
+
+            return None
+
+    @staticmethod
+    def estimate_falling_tau_nls(
+            time: np.ndarray,
+            measured: np.ndarray,
+            rising_steady_state_value: float,
+            falling_steady_state_value: float,
+            tau_initial_guess: float
+    ) -> tuple[float, np.ndarray] | None:
+
+        def model(
+                time: np.ndarray,
+                tau: float
+        ) -> np.ndarray:
+
+            return (
+                    falling_steady_state_value
+                    + (
+                            rising_steady_state_value
+                            - falling_steady_state_value
+                    )
+                    * np.exp(
+                -time / tau
+            )
+            )
+
+        try:
+
+            popt, pcov = curve_fit(
+                model,
+                time,
+                measured,
+                p0=[tau_initial_guess]
+            )
+
+            return (
+                float(popt[0]),
+                pcov
+            )
+
+        except Exception:
+
+            return None
+
+    @staticmethod
     def calculate_settling_time(
             tau: float
     ) -> float:
@@ -99,6 +187,88 @@ class DynamicPropertiesAnalyzer:
             / (2.0 * np.pi * tau)
         )
 
+    @staticmethod
+    def calculate_number_of_tau(
+            measurement_time_s: float,
+            tau_s: float
+    ) -> float:
+
+        if (
+                pd.isna(tau_s)
+                or tau_s <= 0
+        ):
+            return np.nan
+
+        return (
+                measurement_time_s
+                / tau_s
+        )
+
+    @classmethod
+    def calculate_dynamic_properties_from_tau(
+            cls,
+            tau_s: float
+    ) -> dict:
+
+        settling_time_s = (
+            cls.calculate_settling_time(
+                tau_s
+            )
+            if not pd.isna(
+                tau_s
+            )
+            else np.nan
+        )
+
+        cutoff_frequency_hz = (
+            cls.calculate_cutoff_frequency(
+                tau_s
+            ) * 1000.0
+            if (
+                    not pd.isna(
+                        tau_s
+                    )
+                    and tau_s > 0
+            )
+            else np.nan
+        )
+
+        cutoff_period_s = (
+            1.0
+            / cutoff_frequency_hz
+            if (
+                    not pd.isna(
+                        cutoff_frequency_hz
+                    )
+                    and cutoff_frequency_hz > 0
+            )
+            else np.nan
+        )
+
+        cutoff_period_min = (
+            cutoff_period_s
+            / 60.0
+            if not pd.isna(
+                cutoff_period_s
+            )
+            else np.nan
+        )
+
+        return {
+
+            PropertiesColumns.DYNAMIC_SETTLING_TIME:
+                settling_time_s,
+
+            PropertiesColumns.DYNAMIC_CUTOFF_FREQUENCY:
+                cutoff_frequency_hz,
+
+            PropertiesColumns.DYNAMIC_CUTOFF_PERIOD_S:
+                cutoff_period_s,
+
+            PropertiesColumns.DYNAMIC_CUTOFF_PERIOD_MIN:
+                cutoff_period_min
+        }
+
     @classmethod
     def calculate_all_dynamic_properties(
             cls,
@@ -106,8 +276,22 @@ class DynamicPropertiesAnalyzer:
             variable: str,
             static_row: pd.Series,
             switch_sample: int,
-            sampling_period_s: float
+            sampling_period_s: float,
+            use_nls: bool = False
     ) -> pd.DataFrame:
+
+        measurement_time_rising_s = (
+                switch_sample
+                * sampling_period_s
+        )
+
+        measurement_time_falling_s = (
+                (
+                        len(df_measurement)
+                        - switch_sample
+                )
+                * sampling_period_s
+        )
 
         initial_value = static_row[
             PropertiesColumns.INITIAL_VALUE
@@ -167,80 +351,110 @@ class DynamicPropertiesAnalyzer:
             else np.nan
         )
 
-        settling_time_rising_s = (
-            cls.calculate_settling_time(
+        if use_nls:
+
+            rising_df = (
+                df_measurement[
+                    df_measurement[
+                        CSVColumns.SAMPLE_COLUMN
+                    ] <= switch_sample
+                    ]
+            )
+
+            falling_df = (
+                df_measurement[
+                    df_measurement[
+                        CSVColumns.SAMPLE_COLUMN
+                    ] >= switch_sample
+                    ]
+                .copy()
+            )
+
+            falling_df[
+                CSVColumns.SAMPLE_COLUMN
+            ] = (
+                    falling_df[
+                        CSVColumns.SAMPLE_COLUMN
+                    ]
+                    - switch_sample
+            )
+
+            if not pd.isna(
+                    tau_rising_s
+            ):
+
+                rising_result = (
+                    cls.estimate_rising_tau_nls(
+                        time=rising_df[
+                            CSVColumns.SAMPLE_COLUMN
+                        ].to_numpy(),
+                        measured=rising_df[
+                            variable
+                        ].to_numpy(),
+                        initial_value=initial_value,
+                        rising_steady_state_value=steady_high,
+                        tau_initial_guess=tau_rising_s
+                    )
+                )
+
+                if rising_result is not None:
+                    tau_rising_s, _ = (
+                        rising_result
+                    )
+
+            if not pd.isna(
+                    tau_falling_s
+            ):
+
+                falling_result = (
+                    cls.estimate_falling_tau_nls(
+                        time=falling_df[
+                            CSVColumns.SAMPLE_COLUMN
+                        ].to_numpy(),
+                        measured=falling_df[
+                            variable
+                        ].to_numpy(),
+                        rising_steady_state_value=steady_high,
+                        falling_steady_state_value=steady_low,
+                        tau_initial_guess=tau_falling_s
+                    )
+                )
+
+                if falling_result is not None:
+                    tau_falling_s, _ = (
+                        falling_result
+                    )
+
+        rising_properties = (
+            cls.calculate_dynamic_properties_from_tau(
                 tau_rising_s
             )
-            if not pd.isna(tau_rising_s)
-            else np.nan
         )
 
-        settling_time_falling_s = (
-            cls.calculate_settling_time(
+        falling_properties = (
+            cls.calculate_dynamic_properties_from_tau(
                 tau_falling_s
             )
-            if not pd.isna(tau_falling_s)
-            else np.nan
         )
 
-        cutoff_frequency_rising_hz = (
-            cls.calculate_cutoff_frequency(
+        number_of_tau_rising = (
+            cls.calculate_number_of_tau(
+                measurement_time_s=
+                measurement_time_rising_s,
+
+                tau_s=
                 tau_rising_s
             )
-            if (
-                    not pd.isna(tau_rising_s)
-                    and tau_rising_s > 0
-            )
-            else np.nan
         )
 
-        cutoff_frequency_falling_hz = (
-            cls.calculate_cutoff_frequency(
+        number_of_tau_falling = (
+            cls.calculate_number_of_tau(
+                measurement_time_s=
+                measurement_time_falling_s,
+
+                tau_s=
                 tau_falling_s
             )
-            if (
-                    not pd.isna(tau_falling_s)
-                    and tau_falling_s > 0
-            )
-            else np.nan
-        )
-
-        cutoff_period_rising_s = (
-            1.0 / cutoff_frequency_rising_hz
-            if (
-                    not pd.isna(
-                        cutoff_frequency_rising_hz
-                    )
-                    and cutoff_frequency_rising_hz > 0
-            )
-            else np.nan
-        )
-
-        cutoff_period_falling_s = (
-            1.0 / cutoff_frequency_falling_hz
-            if (
-                    not pd.isna(
-                        cutoff_frequency_falling_hz
-                    )
-                    and cutoff_frequency_falling_hz > 0
-            )
-            else np.nan
-        )
-
-        cutoff_period_rising_min = (
-            cutoff_period_rising_s / 60.0
-            if not pd.isna(
-                cutoff_period_rising_s
-            )
-            else np.nan
-        )
-
-        cutoff_period_falling_min = (
-            cutoff_period_falling_s / 60.0
-            if not pd.isna(
-                cutoff_period_falling_s
-            )
-            else np.nan
         )
 
         return pd.DataFrame(
@@ -249,44 +463,164 @@ class DynamicPropertiesAnalyzer:
                     PropertiesColumns.VARIABLE:
                         variable,
 
-                    PropertiesColumns.TAU_RISING_SAMPLES:
-                        tau_rising_samples,
-
                     PropertiesColumns.TAU_RISING_S:
                         tau_rising_s,
-
-                    PropertiesColumns.TAU_FALLING_SAMPLES:
-                        tau_falling_samples,
 
                     PropertiesColumns.TAU_FALLING_S:
                         tau_falling_s,
 
+                    PropertiesColumns.NUMBER_OF_TAU_RISING:
+                        number_of_tau_rising,
+
+                    PropertiesColumns.NUMBER_OF_TAU_FALLING:
+                        number_of_tau_falling,
+
                     PropertiesColumns.SETTLING_TIME_RISING_S:
-                        settling_time_rising_s,
+                        rising_properties[
+                            PropertiesColumns
+                            .DYNAMIC_SETTLING_TIME
+                        ],
 
                     PropertiesColumns.SETTLING_TIME_FALLING_S:
-                        settling_time_falling_s,
+                        falling_properties[
+                            PropertiesColumns
+                            .DYNAMIC_SETTLING_TIME
+                        ],
 
                     PropertiesColumns.CUTOFF_FREQUENCY_RISING_HZ:
-                        cutoff_frequency_rising_hz,
+                        rising_properties[
+                            PropertiesColumns
+                            .DYNAMIC_CUTOFF_FREQUENCY
+                        ],
 
                     PropertiesColumns.CUTOFF_FREQUENCY_FALLING_HZ:
-                        cutoff_frequency_falling_hz,
+                        falling_properties[
+                            PropertiesColumns
+                            .DYNAMIC_CUTOFF_FREQUENCY
+                        ],
 
                     PropertiesColumns.CUTOFF_PERIOD_RISING_S:
-                        cutoff_period_rising_s,
+                        rising_properties[
+                            PropertiesColumns
+                            .DYNAMIC_CUTOFF_PERIOD_S
+                        ],
 
                     PropertiesColumns.CUTOFF_PERIOD_FALLING_S:
-                        cutoff_period_falling_s,
+                        falling_properties[
+                            PropertiesColumns
+                            .DYNAMIC_CUTOFF_PERIOD_S
+                        ],
 
                     PropertiesColumns.CUTOFF_PERIOD_RISING_MIN:
-                        cutoff_period_rising_min,
+                        rising_properties[
+                            PropertiesColumns
+                            .DYNAMIC_CUTOFF_PERIOD_MIN
+                        ],
 
                     PropertiesColumns.CUTOFF_PERIOD_FALLING_MIN:
-                        cutoff_period_falling_min
+                        falling_properties[
+                            PropertiesColumns
+                            .DYNAMIC_CUTOFF_PERIOD_MIN
+                        ]
                 }
             ]
         )
+
+    @staticmethod
+    def create_rising_result_row(
+            label: str,
+            row: pd.Series
+    ) -> dict:
+
+        return {
+
+            PropertiesColumns.LOAD_RESISTANCE:
+                label,
+
+            PropertiesColumns.TAU_RISING_S:
+                row[
+                    PropertiesColumns
+                    .TAU_RISING_S
+                ],
+
+            PropertiesColumns.NUMBER_OF_TAU_RISING:
+                row[
+                    PropertiesColumns
+                    .NUMBER_OF_TAU_RISING
+                ],
+
+            PropertiesColumns.SETTLING_TIME_RISING_S:
+                row[
+                    PropertiesColumns
+                    .SETTLING_TIME_RISING_S
+                ],
+
+            PropertiesColumns.CUTOFF_FREQUENCY_RISING_HZ:
+                row[
+                    PropertiesColumns
+                    .CUTOFF_FREQUENCY_RISING_HZ
+                ],
+
+            PropertiesColumns.CUTOFF_PERIOD_RISING_S:
+                row[
+                    PropertiesColumns
+                    .CUTOFF_PERIOD_RISING_S
+                ],
+
+            PropertiesColumns.CUTOFF_PERIOD_RISING_MIN:
+                row[
+                    PropertiesColumns
+                    .CUTOFF_PERIOD_RISING_MIN
+                ]
+        }
+
+    @staticmethod
+    def create_falling_result_row(
+            label: str,
+            row: pd.Series
+    ) -> dict:
+
+        return {
+
+            PropertiesColumns.LOAD_RESISTANCE:
+                label,
+
+            PropertiesColumns.TAU_FALLING_S:
+                row[
+                    PropertiesColumns
+                    .TAU_FALLING_S
+                ],
+
+            PropertiesColumns.NUMBER_OF_TAU_FALLING:
+                row[
+                    PropertiesColumns
+                    .NUMBER_OF_TAU_FALLING
+                ],
+
+            PropertiesColumns.SETTLING_TIME_FALLING_S:
+                row[
+                    PropertiesColumns
+                    .SETTLING_TIME_FALLING_S
+                ],
+
+            PropertiesColumns.CUTOFF_FREQUENCY_FALLING_HZ:
+                row[
+                    PropertiesColumns
+                    .CUTOFF_FREQUENCY_FALLING_HZ
+                ],
+
+            PropertiesColumns.CUTOFF_PERIOD_FALLING_S:
+                row[
+                    PropertiesColumns
+                    .CUTOFF_PERIOD_FALLING_S
+                ],
+
+            PropertiesColumns.CUTOFF_PERIOD_FALLING_MIN:
+                row[
+                    PropertiesColumns
+                    .CUTOFF_PERIOD_FALLING_MIN
+                ]
+        }
 
     @classmethod
     def generate_dynamic_properties_csvs(
@@ -304,20 +638,17 @@ class DynamicPropertiesAnalyzer:
 
         rising_results = {
             variable: []
-            for variable in GeneratedResults.VARIABLES_DYNAMIC
+            for variable in GeneratedResults.VARIABLES_GENERATED_RESULTS
         }
 
         falling_results = {
             variable: []
-            for variable in GeneratedResults.VARIABLES_DYNAMIC
+            for variable in GeneratedResults.VARIABLES_GENERATED_RESULTS
         }
 
-        for (
-                merged_file_path,
-                label
-        ) in zip(
-            merged_file_paths,
-            labels
+        for merged_file_path, label in zip(
+                merged_file_paths,
+                labels
         ):
 
             df_measurement = pd.read_csv(
@@ -325,7 +656,9 @@ class DynamicPropertiesAnalyzer:
                 sep=";"
             )
 
-            for variable in GeneratedResults.VARIABLES_DYNAMIC:
+            for variable in (
+                    GeneratedResults.VARIABLES_GENERATED_RESULTS
+            ):
                 static_file_path = (
                     f"{GeneratedResults.STATIC_PROPERTIES_DIRECTORY}/"
                     f"{variable}_static_properties.csv"
@@ -336,11 +669,14 @@ class DynamicPropertiesAnalyzer:
                     sep=";"
                 )
 
-                static_row = df_static[
+                static_row = (
                     df_static[
-                        PropertiesColumns.LOAD_RESISTANCE
-                    ] == label
-                    ].iloc[0]
+                        df_static[
+                            PropertiesColumns.LOAD_RESISTANCE
+                        ] == label
+                        ]
+                    .iloc[0]
+                )
 
                 df_dynamic = (
                     cls.calculate_all_dynamic_properties(
@@ -348,7 +684,8 @@ class DynamicPropertiesAnalyzer:
                         variable=variable,
                         static_row=static_row,
                         switch_sample=switch_sample,
-                        sampling_period_s=sampling_period_s
+                        sampling_period_s=sampling_period_s,
+                        use_nls=False
                     )
                 )
 
@@ -357,94 +694,25 @@ class DynamicPropertiesAnalyzer:
                 rising_results[
                     variable
                 ].append(
-                    {
-                        PropertiesColumns.LOAD_RESISTANCE:
-                            label,
-
-                        PropertiesColumns.TAU_RISING_SAMPLES:
-                            row[
-                                PropertiesColumns
-                                .TAU_RISING_SAMPLES
-                            ],
-
-                        PropertiesColumns.TAU_RISING_S:
-                            row[
-                                PropertiesColumns
-                                .TAU_RISING_S
-                            ],
-
-                        PropertiesColumns.SETTLING_TIME_RISING_S:
-                            row[
-                                PropertiesColumns
-                                .SETTLING_TIME_RISING_S
-                            ],
-
-                        PropertiesColumns.CUTOFF_FREQUENCY_RISING_HZ:
-                            row[
-                                PropertiesColumns
-                                .CUTOFF_FREQUENCY_RISING_HZ
-                            ],
-
-                        PropertiesColumns.CUTOFF_PERIOD_RISING_S:
-                            row[
-                                PropertiesColumns
-                                .CUTOFF_PERIOD_RISING_S
-                            ],
-
-                        PropertiesColumns.CUTOFF_PERIOD_RISING_MIN:
-                            row[
-                                PropertiesColumns
-                                .CUTOFF_PERIOD_RISING_MIN
-                            ]
-                    }
+                    cls.create_rising_result_row(
+                        label=label,
+                        row=row
+                    )
                 )
 
                 falling_results[
                     variable
                 ].append(
-                    {
-                        PropertiesColumns.LOAD_RESISTANCE:
-                            label,
-
-                        PropertiesColumns.TAU_FALLING_SAMPLES:
-                            row[
-                                PropertiesColumns
-                                .TAU_FALLING_SAMPLES
-                            ],
-
-                        PropertiesColumns.TAU_FALLING_S:
-                            row[
-                                PropertiesColumns
-                                .TAU_FALLING_S
-                            ],
-
-                        PropertiesColumns.SETTLING_TIME_FALLING_S:
-                            row[
-                                PropertiesColumns
-                                .SETTLING_TIME_FALLING_S
-                            ],
-
-                        PropertiesColumns.CUTOFF_FREQUENCY_FALLING_HZ:
-                            row[
-                                PropertiesColumns
-                                .CUTOFF_FREQUENCY_FALLING_HZ
-                            ],
-
-                        PropertiesColumns.CUTOFF_PERIOD_FALLING_S:
-                            row[
-                                PropertiesColumns
-                                .CUTOFF_PERIOD_FALLING_S
-                            ],
-
-                        PropertiesColumns.CUTOFF_PERIOD_FALLING_MIN:
-                            row[
-                                PropertiesColumns
-                                .CUTOFF_PERIOD_FALLING_MIN
-                            ]
-                    }
+                    cls.create_falling_result_row(
+                        label=label,
+                        row=row
+                    )
                 )
 
-        for variable in GeneratedResults.VARIABLES_DYNAMIC:
+        for variable in (
+                GeneratedResults
+                        .VARIABLES_GENERATED_RESULTS
+        ):
             pd.DataFrame(
                 rising_results[variable]
             ).to_csv(
@@ -469,5 +737,137 @@ class DynamicPropertiesAnalyzer:
 
             print(
                 f"Dynamic properties saved for "
+                f"{variable}"
+            )
+
+    @classmethod
+    def generate_nls_dynamic_properties_csvs(
+            cls,
+            merged_file_paths: list[str],
+            labels: list[str],
+            switch_sample: int = 900,
+            sampling_period_s: float = 1.0
+    ) -> None:
+
+        os.makedirs(
+            GeneratedResults
+            .NLS_DYNAMIC_PROPERTIES_DIRECTORY,
+            exist_ok=True
+        )
+
+        rising_results = {
+            variable: []
+            for variable in
+            GeneratedResults
+            .VARIABLES_GENERATED_RESULTS
+        }
+
+        falling_results = {
+            variable: []
+            for variable in
+            GeneratedResults
+            .VARIABLES_GENERATED_RESULTS
+        }
+
+        for (
+                merged_file_path,
+                label
+        ) in zip(
+            merged_file_paths,
+            labels
+        ):
+
+            df_measurement = pd.read_csv(
+                merged_file_path,
+                sep=";"
+            )
+
+            for variable in (
+                    GeneratedResults
+                            .VARIABLES_GENERATED_RESULTS
+            ):
+                static_file_path = (
+                    f"{GeneratedResults.STATIC_PROPERTIES_DIRECTORY}/"
+                    f"{variable}_static_properties.csv"
+                )
+
+                df_static = pd.read_csv(
+                    static_file_path,
+                    sep=";"
+                )
+
+                static_row = (
+                    df_static[
+                        df_static[
+                            PropertiesColumns
+                            .LOAD_RESISTANCE
+                        ] == label
+                        ]
+                            .iloc[0]
+                )
+
+                df_dynamic = (
+                    cls.calculate_all_dynamic_properties(
+                        df_measurement=df_measurement,
+                        variable=variable,
+                        static_row=static_row,
+                        switch_sample=switch_sample,
+                        sampling_period_s=sampling_period_s,
+                        use_nls=True
+                    )
+                )
+
+                row = df_dynamic.iloc[0]
+
+                rising_results[
+                    variable
+                ].append(
+                    cls.create_rising_result_row(
+                        label=label,
+                        row=row
+                    )
+                )
+
+                falling_results[
+                    variable
+                ].append(
+                    cls.create_falling_result_row(
+                        label=label,
+                        row=row
+                    )
+                )
+
+        for variable in (
+                GeneratedResults
+                        .VARIABLES_GENERATED_RESULTS
+        ):
+            pd.DataFrame(
+                rising_results[
+                    variable
+                ]
+            ).to_csv(
+                (
+                    f"{GeneratedResults.NLS_DYNAMIC_PROPERTIES_DIRECTORY}/"
+                    f"{variable}_rising_nls_dynamic_properties.csv"
+                ),
+                sep=";",
+                index=False
+            )
+
+            pd.DataFrame(
+                falling_results[
+                    variable
+                ]
+            ).to_csv(
+                (
+                    f"{GeneratedResults.NLS_DYNAMIC_PROPERTIES_DIRECTORY}/"
+                    f"{variable}_falling_nls_dynamic_properties.csv"
+                ),
+                sep=";",
+                index=False
+            )
+
+            print(
+                f"NLS dynamic properties saved for "
                 f"{variable}"
             )

@@ -23,11 +23,11 @@ MERGED_FILE_PATHS = [
 ]
 
 LABELS = [
-    "33K",
-    "3K3",
-    "330R",
-    "33R",
-    "3R3"
+    "33KΩ",
+    "3.3KΩ",
+    "330Ω",
+    "33Ω",
+    "3.3Ω"
 ]
 
 LOAD_RESISTANCES = [
